@@ -385,15 +385,15 @@ read_input() {
     local validator=$3
     local input
 
-    # Display prompt and ensure it's flushed immediately
+    # Display prompt directly to terminal to ensure it appears immediately
     if [ -n "$default" ]; then
-        printf "%s [%s]: " "$prompt" "$default"
+        echo -n "$prompt [$default]: " >/dev/tty
     else
-        printf "%s: " "$prompt"
+        echo -n "$prompt: " >/dev/tty
     fi
 
-    # Read input from stdin
-    IFS= read -r input || return 1
+    # Read input from terminal
+    IFS= read -r input </dev/tty || return 1
 
     # Use default if input is empty
     input=${input:-$default}
@@ -405,7 +405,7 @@ read_input() {
         fi
     fi
 
-    # Return the input
+    # Return the input (this goes to stdout for command substitution)
     printf "%s" "$input"
 }
 
@@ -414,12 +414,12 @@ read_password() {
     local default=$2
     local input
 
-    # Display prompt and ensure it's flushed immediately
-    printf "%s: " "$prompt"
+    # Display prompt directly to terminal
+    echo -n "$prompt: " >/dev/tty
 
-    # Read password silently from stdin
-    IFS= read -r -s input || return 1
-    echo ""  # New line after password input
+    # Read password silently from terminal
+    IFS= read -r -s input </dev/tty || return 1
+    echo "" >/dev/tty  # New line after password input
 
     # Use default if input is empty
     if [ -z "$input" ] && [ -n "$default" ]; then
@@ -428,7 +428,7 @@ read_password() {
 
     # Validate that password is not empty
     if [ -z "$input" ]; then
-        echo "❌ Password cannot be empty"
+        echo "❌ Password cannot be empty" >/dev/tty
         return 1
     fi
 
