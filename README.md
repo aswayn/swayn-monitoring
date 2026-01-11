@@ -40,6 +40,7 @@ A comprehensive monitoring stack using Docker Compose with Grafana, Prometheus, 
 - **Prometheus**: https://giants.corp.swayn.com/prometheus/
 - **Alert Manager**: https://giants.corp.swayn.com/alertmanager/
 - **Loki**: http://giants.corp.swayn.com:3100/ (log aggregation)
+- **PostgreSQL**: giants.corp.swayn.com:5432 (monitoring/monitoring_user/monitoring_pass)
 - **Bitwarden**: https://vault.corp.swayn.com/ (password manager)
 - **Keypair Service API**: http://giants.corp.swayn.com:3001/api/ (keypair management - internal only)
 - **Health Check**: https://giants.corp.swayn.com/health
@@ -49,6 +50,7 @@ A comprehensive monitoring stack using Docker Compose with Grafana, Prometheus, 
 - **Prometheus** (Port 9090): Metrics collection and storage with etcd service discovery
 - **Loki** (Ports 3100, 1514): Log aggregation with syslog TCP/UDP support
 - **Alert Manager** (Port 9093): Alert handling and notifications
+- **PostgreSQL** (Port 5432): Database backend for keypair service and monitoring data
 - **Bitwarden** (Port 80): Self-hosted password manager (Vaultwarden)
 - **Keypair Service** (Port 3001): REST API for managing cryptographic keypairs
 - **etcd** (Ports 2379/2380): Distributed key-value store for configuration management
@@ -214,64 +216,63 @@ openssl rand -base64 32
 - Regularly backup the `bitwarden_data` volume
 - Consider enabling additional security features
 
-## 🔔 MS Teams Alert Notifications
+## 💾 PostgreSQL Database
 
-The Alertmanager is configured to send notifications to Microsoft Teams channels for different alert severities.
+The monitoring stack includes PostgreSQL as the primary database backend for storing configuration data, keypairs, and monitoring metadata.
 
-### Notification Channels
-- **General Alerts**: All alerts sent to the main Teams channel
-- **Critical Alerts**: 🚨 High-priority alerts with special formatting
-- **Warning Alerts**: ⚠️ Warning-level alerts
+### Features
+- **Keypair Storage**: Secure storage of SSH keys, API keys, and certificates
+- **Monitoring Data**: Custom metrics and alert history storage
+- **User Management**: Authentication data for the keypair service
+- **ACID Compliance**: Full transactional support for data integrity
+- **High Performance**: Optimized for concurrent access patterns
 
-### Setup MS Teams Webhooks
-1. Go to your Microsoft Teams channel
-2. Click the "..." menu → "Workflows" → "Post to a channel when a webhook request is received"
-3. Create incoming webhooks for each notification type:
-   - General notifications webhook
-   - Critical alerts webhook (optional)
-   - Warning alerts webhook (optional)
+### Database Schema
+The database is automatically initialized with the following schema:
 
-4. Copy the webhook URLs and add them to your `.env` file:
+**Keypair Management:**
+- `monitoring.keypairs` - SSH keys, certificates, and API keys
+- `monitoring.service_accounts` - User accounts for the keypair service
 
-### Domain Setup
-Configure DNS or add to `/etc/hosts`:
+**Monitoring Data:**
+- `monitoring.custom_metrics` - Custom application metrics
+- `monitoring.alert_history` - Historical alert data
+- `monitoring.prometheus_targets` - Dynamic target configuration
+
+### Connection Details
+- **Host**: giants.corp.swayn.com
+- **Port**: 5432
+- **Database**: monitoring
+- **Username**: monitoring_user
+- **Password**: Configurable via `POSTGRES_PASSWORD`
+
+### Default Credentials
+- **Database**: monitoring
+- **Username**: monitoring_user
+- **Password**: monitoring_pass (configurable)
+
+### Environment Variables
+Configure database access:
 ```bash
-# Add to /etc/hosts
-127.0.0.1 giants.corp.swayn.com vault.corp.swayn.com
+POSTGRES_PASSWORD=your_secure_database_password
 ```
+
+### Backup & Recovery
+Regular backups are recommended:
 ```bash
-MSTEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/your-webhook-url
-MSTEAMS_CRITICAL_WEBHOOK_URL=https://outlook.office.com/webhook/your-critical-webhook-url
-MSTEAMS_WARNING_WEBHOOK_URL=https://outlook.office.com/webhook/your-warning-webhook-url
+# Create backup
+docker exec swayn-postgres pg_dump -U monitoring_user monitoring > backup.sql
+
+# Restore backup
+docker exec -i swayn-postgres psql -U monitoring_user monitoring < backup.sql
 ```
 
-### Alert Routing
-- **Default**: All alerts go to the general MS Teams channel
-- **Critical**: Alerts with `severity: critical` go to the critical channel
-- **Warning**: Alerts with `severity: warning` go to the warning channel
-
-### Message Format
-MS Teams notifications include:
-- Alert name and status
-- Severity level with emoji indicators
-- Instance and job information
-- Timestamp
-- Alert descriptions and summaries
-
-### Example Prometheus Alert
-```yaml
-groups:
-- name: example
-  rules:
-  - alert: HighCPUUsage
-    expr: cpu_usage > 90
-    for: 5m
-    labels:
-      severity: critical
-    annotations:
-      summary: "High CPU usage detected"
-      description: "CPU usage is above 90% for more than 5 minutes"
-```
+### Integration Points
+PostgreSQL integrates with:
+- **Keypair Service**: Primary storage for cryptographic materials
+- **Monitoring Stack**: Metadata and configuration storage
+- **Prometheus**: Target configuration storage
+- **Grafana**: Potential for custom dashboards and data sources
 
 ## 🗂️ etcd Service Discovery
 
