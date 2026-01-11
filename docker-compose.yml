@@ -137,6 +137,23 @@ services:
     networks:
       - monitoring
 
+  postgres:
+    image: postgres:15-alpine
+    container_name: swayn-postgres
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+      - POSTGRES_DB=monitoring
+      - POSTGRES_USER=monitoring_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-monitoring_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - monitoring
+    ports:
+      - "5432:5432"
+
   nodejs-scanner:
     build:
       context: ./scanner
