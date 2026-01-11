@@ -830,9 +830,8 @@ mkdir -p configs/nginx/ssl
 mkdir -p etcd-keypair-service
 mkdir -p scanner
 mkdir -p data/grafana
-    mkdir -p data/loki
-    mkdir -p data/postgres
-    mkdir -p data/prometheus
+mkdir -p data/loki
+mkdir -p data/prometheus
     mkdir -p etcd-keypair-service
     mkdir -p scanner
 
@@ -1463,11 +1462,9 @@ mkdir -p configs/alertmanager
 mkdir -p configs/grafana/provisioning/datasources
 mkdir -p configs/grafana/provisioning/dashboards
 mkdir -p configs/grafana/dashboards
-mkdir -p configs/loki
-mkdir -p configs/nginx/ssl
-mkdir -p configs/postgres
-mkdir -p configs/prometheus
-mkdir -p configs/web
+    mkdir -p configs/loki
+    mkdir -p configs/nginx/ssl
+    mkdir -p configs/prometheus
 mkdir -p data/alertmanager
 mkdir -p data/bitwarden
 mkdir -p data/etcd

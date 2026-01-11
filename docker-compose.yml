@@ -59,6 +59,45 @@ services:
     networks:
       - monitoring
 
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: swayn-etcd
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+      - ETCD_NAME=etcd0
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_AUTO_COMPACTION_RETENTION=1
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      - monitoring
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    command: etcd --name etcd0 --data-dir /etcd-data --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://etcd:2379 --listen-peer-urls http://0.0.0.0:2380 --initial-advertise-peer-urls http://etcd:2380 --initial-cluster etcd0=http://etcd:2380 --initial-cluster-state new --auto-compaction-retention 1
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: swayn-loki
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+    volumes:
+      - ./configs/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    networks:
+      - monitoring
+
   nodejs-scanner:
     build:
       context: ./scanner
@@ -77,6 +116,26 @@ services:
     depends_on:
       - bitwarden
       - etcd
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: swayn-grafana
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=Australia/Sydney
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+      - loki
 
   etcd-keypair-service:
     build:
