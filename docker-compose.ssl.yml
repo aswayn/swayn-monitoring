@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx/ssl:/etc/nginx/ssl:ro
+    environment:
+      - SSL_CERT_PATH=${SSL_CERT_PATH}
+      - SSL_KEY_PATH=${SSL_KEY_PATH}

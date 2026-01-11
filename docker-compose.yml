@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: swayn-prometheus
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: swayn-alertmanager
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+    volumes:
+      - ./configs/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - monitoring
+
+  bitwarden:
+    image: vaultwarden/server:latest
+    container_name: swayn-bitwarden
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+      - WEBSOCKET_ENABLED=true
+      - SIGNUPS_ALLOWED=true
+      - INVITATIONS_ALLOWED=true
+      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme}
+      - DOMAIN=https://vault.corp.swayn.com
+    volumes:
+      - bitwarden_data:/data
+    networks:
+      - monitoring
+
+  nodejs-scanner:
+    build:
+      context: ./scanner
+      dockerfile: Dockerfile
+    container_name: swayn-nodejs-scanner
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+      - BITWARDEN_URL=http://bitwarden:80
+      - BITWARDEN_USERNAME=${BITWARDEN_USERNAME}
+      - BITWARDEN_PASSWORD=${BITWARDEN_PASSWORD}
+      - PROMETHEUS_CONFIG_PATH=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./configs/prometheus:/etc/prometheus
+    networks:
+      - monitoring
+    depends_on:
+      - bitwarden
+
+  nginx:
+    image: nginx:alpine
+    container_name: swayn-nginx
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Sydney
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - monitoring
+    depends_on:
+      - grafana
+      - prometheus
+      - alertmanager
+
+volumes:
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  bitwarden_data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge
