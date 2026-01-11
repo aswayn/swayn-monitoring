@@ -45,9 +45,6 @@ CONFIG_SSL_ORG="Swayn Enterprises"
 CONFIG_SSL_VALIDITY="365"
 CONFIG_SSL_GENERATE_CERTS="yes"
 CONFIG_GRAFANA_PASSWORD="admin123"
-CONFIG_POSTGRES_USER="monitoring_user"
-CONFIG_POSTGRES_PASSWORD="monitoring_pass"
-CONFIG_POSTGRES_DB="monitoring"
 CONFIG_BITWARDEN_ADMIN_TOKEN=""
 CONFIG_BITWARDEN_USERNAME=""
 CONFIG_BITWARDEN_PASSWORD=""
@@ -81,11 +78,6 @@ CONFIG_SSL_GENERATE_CERTS="$CONFIG_SSL_GENERATE_CERTS"
 
 # Grafana Configuration
 CONFIG_GRAFANA_PASSWORD="$CONFIG_GRAFANA_PASSWORD"
-
-# PostgreSQL Configuration
-CONFIG_POSTGRES_USER="$CONFIG_POSTGRES_USER"
-CONFIG_POSTGRES_PASSWORD="$CONFIG_POSTGRES_PASSWORD"
-CONFIG_POSTGRES_DB="$CONFIG_POSTGRES_DB"
 
 # Bitwarden Configuration
 CONFIG_BITWARDEN_ADMIN_TOKEN="$CONFIG_BITWARDEN_ADMIN_TOKEN"
@@ -128,17 +120,16 @@ show_main_menu() {
         echo "🆕 Fresh Installation - Let's configure your monitoring stack"
     fi
     echo ""
-    echo "📋 Main Menu:"
-    echo "1. 📊 Domain Configuration"
-    echo "2. 🔐 SSL Certificate Settings"
-    echo "3. 📈 Grafana Configuration"
-    echo "4. 💾 PostgreSQL Configuration"
-    echo "5. 🔑 Bitwarden Configuration"
-    echo "6. 🔔 MS Teams Notifications"
-    echo "7. 🔒 Security Settings"
-    echo "8. 👀 Review Configuration"
-    echo "9. 🚀 Install & Deploy"
-    echo "0. ❌ Exit"
+echo "📋 Main Menu:"
+echo "1. 📊 Domain Configuration"
+echo "2. 🔐 SSL Certificate Settings"
+echo "3. 📈 Grafana Configuration"
+echo "4. 🔑 Bitwarden Configuration"
+echo "5. 🔔 MS Teams Notifications"
+echo "6. 🔒 Security Settings"
+echo "7. 👀 Review Configuration"
+echo "8. 🚀 Install & Deploy"
+echo "0. ❌ Exit"
     echo ""
     if [ ! -f "$INSTALLER_ENV_FILE" ]; then
         echo "💡 Tip: Start with Domain Configuration (option 1) for fresh installations"
@@ -311,11 +302,6 @@ show_review_menu() {
     echo ""
     echo "📈 Grafana:"
     echo "  Admin Password: $CONFIG_GRAFANA_PASSWORD"
-    echo ""
-    echo "💾 PostgreSQL:"
-    echo "  Username: $CONFIG_POSTGRES_USER"
-    echo "  Password: $CONFIG_POSTGRES_PASSWORD"
-    echo "  Database: $CONFIG_POSTGRES_DB"
     echo ""
     echo "🔑 Bitwarden:"
     echo "  Admin Token: $CONFIG_BITWARDEN_ADMIN_TOKEN"
@@ -714,7 +700,6 @@ validate_all_config() {
 
     # Validate passwords
     validate_password "$CONFIG_GRAFANA_PASSWORD" || errors+=("Grafana password too short")
-    validate_password "$CONFIG_POSTGRES_PASSWORD" || errors+=("PostgreSQL password too short")
 
     # Validate URLs (optional - can be empty)
     if [ -n "$CONFIG_MSTEAMS_WEBHOOK" ]; then
@@ -840,19 +825,15 @@ EOF
     mkdir -p configs/grafana/provisioning/datasources
     mkdir -p configs/grafana/provisioning/dashboards
     mkdir -p configs/grafana/dashboards
-    mkdir -p configs/loki
-    mkdir -p configs/nginx/ssl
-    mkdir -p configs/postgres
-    mkdir -p configs/prometheus
-    mkdir -p configs/web
-    mkdir -p data/alertmanager
-    mkdir -p data/bitwarden
-    mkdir -p data/etcd
-    mkdir -p data/grafana
+mkdir -p configs/loki
+mkdir -p configs/nginx/ssl
+mkdir -p etcd-keypair-service
+mkdir -p scanner
+mkdir -p data/grafana
     mkdir -p data/loki
     mkdir -p data/postgres
     mkdir -p data/prometheus
-    mkdir -p keypair-service
+    mkdir -p etcd-keypair-service
     mkdir -p scanner
 
     echo "📝 Creating configuration files..."
@@ -893,9 +874,9 @@ scrape_configs:
     static_configs:
       - targets: ['bitwarden:80']
 
-  - job_name: 'keypair-service'
+  - job_name: 'etcd-keypair-service'
     static_configs:
-      - targets: ['keypair-service:3001']
+      - targets: ['etcd-keypair-service:3002']
 
   - job_name: 'postgres'
     static_configs:
@@ -1348,6 +1329,7 @@ EOF
     echo ""
     echo "🔑 Default credentials:"
     echo "   - Grafana: admin / $CONFIG_GRAFANA_PASSWORD"
+echo "   - etcd Keypair Service: admin / admin123"
     echo "   - Bitwarden: $CONFIG_BITWARDEN_USERNAME / $CONFIG_BITWARDEN_PASSWORD"
     echo ""
     echo "📖 See README.md for detailed documentation"
@@ -1412,11 +1394,10 @@ main_menu_loop() {
             1) handle_domain_menu ;;
             2) handle_ssl_menu ;;
             3) handle_grafana_menu ;;
-            4) handle_postgres_menu ;;
-            5) handle_bitwarden_menu ;;
-            6) handle_msteams_menu ;;
-            7) handle_security_menu ;;
-            8)
+            4) handle_bitwarden_menu ;;
+            5) handle_msteams_menu ;;
+            6) handle_security_menu ;;
+            7)
                 # Save configuration before review if this is a fresh install
                 if [ ! -f "$INSTALLER_ENV_FILE" ]; then
                     save_installer_config
@@ -1492,9 +1473,8 @@ mkdir -p data/bitwarden
 mkdir -p data/etcd
 mkdir -p data/grafana
 mkdir -p data/loki
-mkdir -p data/postgres
 mkdir -p data/prometheus
-mkdir -p keypair-service
+mkdir -p etcd-keypair-service
 mkdir -p scanner
 mkdir -p web
 
@@ -1557,9 +1537,9 @@ scrape_configs:
     static_configs:
       - targets: ['bitwarden:80']
 
-  - job_name: 'keypair-service'
+  - job_name: 'etcd-keypair-service'
     static_configs:
-      - targets: ['keypair-service:3001']
+      - targets: ['etcd-keypair-service:3002']
 
   - job_name: 'postgres'
     static_configs:
@@ -2088,7 +2068,6 @@ echo "   - Bitwarden: https://vault.corp.swayn.com/"
 echo "   - Keypair Service API: http://giants.corp.swayn.com:3001/api/"
 echo ""
 echo "💾 Databases:"
-echo "   - PostgreSQL: giants.corp.swayn.com:5432 (monitoring/monitoring_user/monitoring_pass)"
 echo "   - etcd: giants.corp.swayn.com:2379"
 echo ""
 echo "🔍 Health Check:"

@@ -40,9 +40,9 @@ A comprehensive monitoring stack using Docker Compose with Grafana, Prometheus, 
 - **Prometheus**: https://giants.corp.swayn.com/prometheus/
 - **Alert Manager**: https://giants.corp.swayn.com/alertmanager/
 - **Loki**: http://giants.corp.swayn.com:3100/ (log aggregation)
-- **PostgreSQL**: giants.corp.swayn.com:5432 (monitoring/monitoring_user/monitoring_pass)
 - **Bitwarden**: https://vault.corp.swayn.com/ (password manager)
-- **Keypair Service API**: http://giants.corp.swayn.com:3001/api/ (keypair management - internal only)
+- **etcd Keypair Service API**: http://giants.corp.swayn.com:3002/api/ (keypair management)
+- **etcd**: giants.corp.swayn.com:2379 (key-value store)
 - **Health Check**: https://giants.corp.swayn.com/health
 
 ### Service Details
@@ -50,10 +50,9 @@ A comprehensive monitoring stack using Docker Compose with Grafana, Prometheus, 
 - **Prometheus** (Port 9090): Metrics collection and storage with etcd service discovery
 - **Loki** (Ports 3100, 1514): Log aggregation with syslog TCP/UDP support
 - **Alert Manager** (Port 9093): Alert handling and notifications
-- **PostgreSQL** (Port 5432): Database backend for keypair service and monitoring data
 - **Bitwarden** (Port 80): Self-hosted password manager (Vaultwarden)
-- **Keypair Service** (Port 3001): REST API for managing cryptographic keypairs
-- **etcd** (Ports 2379/2380): Distributed key-value store for configuration management
+- **etcd Keypair Service** (Port 3002): REST API for managing cryptographic keypairs using etcd
+- **etcd** (Ports 2379/2380): Distributed key-value store for configuration and keypair management
 - **Node.js Scanner**: Automated service that syncs Bitwarden entries to etcd for Prometheus
 - **Nginx** (Ports 80/443): Reverse proxy with SSL termination
 
@@ -216,63 +215,116 @@ openssl rand -base64 32
 - Regularly backup the `bitwarden_data` volume
 - Consider enabling additional security features
 
-## 💾 PostgreSQL Database
+## 🔑 etcd Keypair Management
 
-The monitoring stack includes PostgreSQL as the primary database backend for storing configuration data, keypairs, and monitoring metadata.
+The monitoring stack uses etcd as a distributed key-value store for managing cryptographic keypairs, replacing the traditional database approach with a more resilient and distributed solution.
 
 ### Features
-- **Keypair Storage**: Secure storage of SSH keys, API keys, and certificates
-- **Monitoring Data**: Custom metrics and alert history storage
-- **User Management**: Authentication data for the keypair service
-- **ACID Compliance**: Full transactional support for data integrity
-- **High Performance**: Optimized for concurrent access patterns
+- **Keypair Storage**: Secure storage of SSH keys, API keys, and certificates in etcd
+- **Distributed Storage**: Fault-tolerant key-value storage across the cluster
+- **REST API**: Full CRUD operations for keypair management via HTTP API
+- **Authentication**: JWT-based secure API access
+- **Encryption**: Private keys can be encrypted with user passphrases
 
-### Database Schema
-The database is automatically initialized with the following schema:
+### etcd Key Structure
+Keypairs are stored in etcd with the following structure:
+```
+/keypairs/{name} = {
+  "name": "key-name",
+  "type": "ssh|api|certificate",
+  "publicKey": "...",
+  "privateKey": "..." | null,
+  "encryptedPrivateKey": "..." | null,
+  "passphraseHash": "...",
+  "metadata": {...},
+  "createdAt": "ISO timestamp",
+  "updatedAt": "ISO timestamp"
+}
 
-**Keypair Management:**
-- `monitoring.keypairs` - SSH keys, certificates, and API keys
-- `monitoring.service_accounts` - User accounts for the keypair service
-
-**Monitoring Data:**
-- `monitoring.custom_metrics` - Custom application metrics
-- `monitoring.alert_history` - Historical alert data
-- `monitoring.prometheus_targets` - Dynamic target configuration
+/users/{username} = {
+  "username": "admin",
+  "passwordHash": "bcrypt hash",
+  "role": "admin|user",
+  "createdAt": "ISO timestamp"
+}
+```
 
 ### Connection Details
 - **Host**: giants.corp.swayn.com
-- **Port**: 5432
-- **Database**: monitoring
-- **Username**: monitoring_user
-- **Password**: Configurable via `POSTGRES_PASSWORD`
+- **Port**: 2379 (client API), 2380 (peer communication)
+- **Protocol**: HTTP (etcd v3 API)
+- **Authentication**: JWT tokens for API access
 
 ### Default Credentials
-- **Database**: monitoring
-- **Username**: monitoring_user
-- **Password**: monitoring_pass (configurable)
+- **API Username**: admin
+- **API Password**: admin123
+- **JWT Secret**: your-secure-jwt-secret-change-this-in-production
 
 ### Environment Variables
-Configure database access:
+Configure etcd keypair service:
 ```bash
-POSTGRES_PASSWORD=your_secure_database_password
+JWT_SECRET=your_secure_jwt_secret
+ETCD_ENDPOINTS=etcd:2379
 ```
 
-### Backup & Recovery
-Regular backups are recommended:
-```bash
-# Create backup
-docker exec swayn-postgres pg_dump -U monitoring_user monitoring > backup.sql
+### API Endpoints
 
-# Restore backup
-docker exec -i swayn-postgres psql -U monitoring_user monitoring < backup.sql
+#### Authentication
+```bash
+# Login and get JWT token
+curl -X POST http://giants.corp.swayn.com:3002/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
 ```
 
-### Integration Points
-PostgreSQL integrates with:
-- **Keypair Service**: Primary storage for cryptographic materials
-- **Monitoring Stack**: Metadata and configuration storage
-- **Prometheus**: Target configuration storage
-- **Grafana**: Potential for custom dashboards and data sources
+#### Keypair Operations
+```bash
+# Generate SSH keypair
+curl -X POST http://giants.corp.swayn.com:3002/api/keys/generate-ssh \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "production-server",
+    "passphrase": "secure-passphrase",
+    "keySize": 4096
+  }'
+
+# List all keypairs
+curl -X GET http://giants.corp.swayn.com:3002/api/keys \
+  -H "Authorization: Bearer <jwt-token>"
+
+# Get specific keypair
+curl -X GET http://giants.corp.swayn.com:3002/api/keys/production-server \
+  -H "Authorization: Bearer <jwt-token>"
+
+# Get private key (with passphrase if encrypted)
+curl -X POST http://giants.corp.swayn.com:3002/api/keys/production-server/private \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"passphrase": "secure-passphrase"}'
+```
+
+### Benefits of etcd Storage
+
+**High Availability:**
+- Distributed storage across multiple nodes
+- Automatic failover and leader election
+- Data consistency guarantees
+
+**Performance:**
+- Fast key-value operations
+- Watch functionality for real-time updates
+- Efficient binary protocol
+
+**Scalability:**
+- Horizontal scaling capabilities
+- Multi-datacenter support
+- Load balancing built-in
+
+**Integration:**
+- Native Prometheus service discovery
+- Kubernetes-friendly architecture
+- Cloud-native design patterns
 
 ## 🗂️ etcd Service Discovery
 
@@ -513,15 +565,14 @@ swayn-monitoring/
 │   ├── loki/               # Loki configuration
 │   ├── nginx/
 │   │   └── ssl/            # SSL certificates
-│   ├── postgres/
 │   ├── prometheus/
-│   └── web/                # PHP configuration
+│   └── web/                # PHP configuration (deprecated)
 ├── data/                    # Persistent data (created by Docker)
 ├── docker-compose.yml       # Main compose file
 ├── docker-compose.ssl.yml   # SSL override file
+├── etcd-keypair-service/   # etcd-based keypair management
 ├── install.sh              # Setup script
 ├── .env.example            # Environment template
-├── keypair-service/        # Keypair management service
 ├── README.md               # Main documentation
 └── scanner/                # Node.js Bitwarden scanner
 ```
