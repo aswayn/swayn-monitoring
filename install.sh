@@ -1422,10 +1422,6 @@ main_menu_loop() {
                     *) echo "❌ Invalid option" ;;
                 esac
                 ;;
-                    9) ;; # Continue loop
-                    *) echo "❌ Invalid option" ;;
-                esac
-                ;;
             9)
                 # Save configuration before installation if this is a fresh install
                 if [ ! -f "$INSTALLER_ENV_FILE" ]; then
