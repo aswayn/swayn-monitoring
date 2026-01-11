@@ -110,8 +110,8 @@ load_installer_config() {
         echo "✅ Configuration loaded successfully"
         return 0
     else
-        echo "🆕 No existing configuration found, starting fresh installation"
-        save_installer_config
+        echo "🆕 Starting fresh installation - you'll be guided through the setup process"
+        # Don't save config yet - let user provide inputs first
         return 1
     fi
 }
@@ -122,6 +122,11 @@ show_main_menu() {
     echo "========================================================================================"
     echo "🎯 Swayn Monitoring Stack - Interactive Installer"
     echo "========================================================================================"
+    if [ -f "$INSTALLER_ENV_FILE" ]; then
+        echo "📂 Resume Mode - Configuration loaded from installer.env"
+    else
+        echo "🆕 Fresh Installation - Let's configure your monitoring stack"
+    fi
     echo ""
     echo "📋 Main Menu:"
     echo "1. 📊 Domain Configuration"
@@ -135,6 +140,10 @@ show_main_menu() {
     echo "9. 🚀 Install & Deploy"
     echo "0. ❌ Exit"
     echo ""
+    if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+        echo "💡 Tip: Start with Domain Configuration (option 1) for fresh installations"
+        echo ""
+    fi
     echo -n "Choose an option [0-9]: "
 }
 
@@ -282,6 +291,11 @@ show_review_menu() {
     echo "========================================================================================"
     echo "👀 Configuration Review"
     echo "========================================================================================"
+    if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+        echo "📝 Fresh Installation - Review your settings before proceeding"
+    else
+        echo "📂 Resume Mode - Review and confirm your loaded configuration"
+    fi
     echo ""
     echo "📊 Domain Configuration:"
     echo "  Main Domain: $CONFIG_DOMAIN_MAIN"
@@ -688,22 +702,42 @@ validate_all_config() {
     validate_password "$CONFIG_GRAFANA_PASSWORD" || errors+=("Grafana password too short")
     validate_password "$CONFIG_POSTGRES_PASSWORD" || errors+=("PostgreSQL password too short")
 
-    # Validate URLs
-    validate_url "$CONFIG_MSTEAMS_WEBHOOK" || errors+=("Invalid MS Teams general webhook")
-    validate_url "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" || errors+=("Invalid MS Teams critical webhook")
-    validate_url "$CONFIG_MSTEAMS_WARNING_WEBHOOK" || errors+=("Invalid MS Teams warning webhook")
+    # Validate URLs (optional - can be empty)
+    if [ -n "$CONFIG_MSTEAMS_WEBHOOK" ]; then
+        validate_url "$CONFIG_MSTEAMS_WEBHOOK" || errors+=("Invalid MS Teams general webhook")
+    fi
+    if [ -n "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" ]; then
+        validate_url "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" || errors+=("Invalid MS Teams critical webhook")
+    fi
+    if [ -n "$CONFIG_MSTEAMS_WARNING_WEBHOOK" ]; then
+        validate_url "$CONFIG_MSTEAMS_WARNING_WEBHOOK" || errors+=("Invalid MS Teams warning webhook")
+    fi
 
-    # Validate required fields
+    # Validate required fields for Bitwarden
     [ -z "$CONFIG_BITWARDEN_ADMIN_TOKEN" ] && errors+=("Bitwarden admin token is required")
     [ -z "$CONFIG_BITWARDEN_USERNAME" ] && errors+=("Bitwarden username is required")
     [ -z "$CONFIG_BITWARDEN_PASSWORD" ] && errors+=("Bitwarden password is required")
     [ -z "$CONFIG_JWT_SECRET" ] && errors+=("JWT secret is required")
+
+    # For fresh installs, warn about default passwords
+    if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+        if [ "$CONFIG_GRAFANA_PASSWORD" = "admin123" ]; then
+            errors+=("Please change the default Grafana password (currently 'admin123')")
+        fi
+        if [ "$CONFIG_POSTGRES_PASSWORD" = "monitoring_pass" ]; then
+            errors+=("Please change the default PostgreSQL password (currently 'monitoring_pass')")
+        fi
+    fi
 
     if [ ${#errors[@]} -gt 0 ]; then
         echo "❌ Configuration validation failed:"
         for error in "${errors[@]}"; do
             echo "  - $error"
         done
+        echo ""
+        if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+            echo "💡 Tip: Use the menu options above to configure these settings"
+        fi
         echo ""
         return 1
     fi
@@ -1305,10 +1339,50 @@ EOF
     echo "📖 See README.md for detailed documentation"
 }
 
+show_fresh_install_welcome() {
+    clear
+    echo "========================================================================================"
+    echo "🏗️  Welcome to Swayn Monitoring Stack Installer"
+    echo "========================================================================================"
+    echo ""
+    echo "This installer will guide you through setting up a complete monitoring stack including:"
+    echo ""
+    echo "📊 Core Services:"
+    echo "   • Prometheus     - Metrics collection & alerting"
+    echo "   • Grafana        - Visualization & dashboards"
+    echo "   • Alert Manager  - Alert routing & notifications"
+    echo "   • Loki          - Log aggregation with syslog support"
+    echo ""
+    echo "🔧 Supporting Services:"
+    echo "   • PostgreSQL     - Database backend"
+    echo "   • Bitwarden      - Password management"
+    echo "   • etcd           - Service discovery"
+    echo "   • Keypair Service- SSH/API key management"
+    echo "   • Nginx          - Reverse proxy & SSL termination"
+    echo ""
+    echo "⚙️  What you'll configure:"
+    echo "   • Domain names and SSL certificates"
+    echo "   • Service credentials and secrets"
+    echo "   • MS Teams notification webhooks"
+    echo "   • Deployment mode (SSL or basic)"
+    echo ""
+    echo "💾 Your configuration will be saved to: installer.env"
+    echo "   You can resume this installation at any time."
+    echo ""
+    echo "Let's get started!"
+    echo ""
+    read -p "Press Enter to begin configuration..."
+}
+
 # Main menu loop
 main_menu_loop() {
     # Load existing configuration if available
-    load_installer_config
+    local is_resume=$(load_installer_config)
+
+    if [ "$is_resume" -eq 1 ]; then
+        # Fresh installation - show welcome screen
+        show_fresh_install_welcome
+    fi
 
     while true; do
         show_main_menu
@@ -1322,6 +1396,12 @@ main_menu_loop() {
             6) handle_msteams_menu ;;
             7) handle_security_menu ;;
             8)
+                # Save configuration before review if this is a fresh install
+                if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+                    save_installer_config
+                    echo "💾 Configuration saved to $INSTALLER_ENV_FILE"
+                    echo ""
+                fi
                 show_review_menu
                 read review_choice
                 case $review_choice in
@@ -1332,7 +1412,6 @@ main_menu_loop() {
                             read confirm
                             if [[ $confirm =~ ^[Yy]$ ]]; then
                                 perform_installation
-                                exit 0
                             fi
                         else
                             echo ""
@@ -1343,7 +1422,17 @@ main_menu_loop() {
                     *) echo "❌ Invalid option" ;;
                 esac
                 ;;
+                    9) ;; # Continue loop
+                    *) echo "❌ Invalid option" ;;
+                esac
+                ;;
             9)
+                # Save configuration before installation if this is a fresh install
+                if [ ! -f "$INSTALLER_ENV_FILE" ]; then
+                    save_installer_config
+                    echo "💾 Configuration saved to $INSTALLER_ENV_FILE"
+                    echo ""
+                fi
                 echo "🚀 Proceeding with installation..."
                 if validate_all_config; then
                     perform_installation
