@@ -43,6 +43,7 @@ CONFIG_SSL_STATE="NSW"
 CONFIG_SSL_CITY="Sydney"
 CONFIG_SSL_ORG="Swayn Enterprises"
 CONFIG_SSL_VALIDITY="365"
+CONFIG_SSL_GENERATE_CERTS="yes"
 CONFIG_GRAFANA_PASSWORD="admin123"
 CONFIG_POSTGRES_USER="monitoring_user"
 CONFIG_POSTGRES_PASSWORD="monitoring_pass"
@@ -55,6 +56,65 @@ CONFIG_MSTEAMS_CRITICAL_WEBHOOK=""
 CONFIG_MSTEAMS_WARNING_WEBHOOK=""
 CONFIG_JWT_SECRET=""
 CONFIG_DEPLOY_MODE="ssl"  # ssl or basic
+
+# Installer state file
+INSTALLER_ENV_FILE="installer.env"
+
+# Configuration management functions
+save_installer_config() {
+    cat > "$INSTALLER_ENV_FILE" << EOF
+# Swayn Monitoring Installer Configuration
+# Generated: $(date)
+# This file contains your installer settings
+
+# Domain Configuration
+CONFIG_DOMAIN_MAIN="$CONFIG_DOMAIN_MAIN"
+CONFIG_DOMAIN_VAULT="$CONFIG_DOMAIN_VAULT"
+
+# SSL Certificate Settings
+CONFIG_SSL_COUNTRY="$CONFIG_SSL_COUNTRY"
+CONFIG_SSL_STATE="$CONFIG_SSL_STATE"
+CONFIG_SSL_CITY="$CONFIG_SSL_CITY"
+CONFIG_SSL_ORG="$CONFIG_SSL_ORG"
+CONFIG_SSL_VALIDITY="$CONFIG_SSL_VALIDITY"
+CONFIG_SSL_GENERATE_CERTS="$CONFIG_SSL_GENERATE_CERTS"
+
+# Grafana Configuration
+CONFIG_GRAFANA_PASSWORD="$CONFIG_GRAFANA_PASSWORD"
+
+# PostgreSQL Configuration
+CONFIG_POSTGRES_USER="$CONFIG_POSTGRES_USER"
+CONFIG_POSTGRES_PASSWORD="$CONFIG_POSTGRES_PASSWORD"
+CONFIG_POSTGRES_DB="$CONFIG_POSTGRES_DB"
+
+# Bitwarden Configuration
+CONFIG_BITWARDEN_ADMIN_TOKEN="$CONFIG_BITWARDEN_ADMIN_TOKEN"
+CONFIG_BITWARDEN_USERNAME="$CONFIG_BITWARDEN_USERNAME"
+CONFIG_BITWARDEN_PASSWORD="$CONFIG_BITWARDEN_PASSWORD"
+
+# MS Teams Notifications
+CONFIG_MSTEAMS_WEBHOOK="$CONFIG_MSTEAMS_WEBHOOK"
+CONFIG_MSTEAMS_CRITICAL_WEBHOOK="$CONFIG_MSTEAMS_CRITICAL_WEBHOOK"
+CONFIG_MSTEAMS_WARNING_WEBHOOK="$CONFIG_MSTEAMS_WARNING_WEBHOOK"
+
+# Security Settings
+CONFIG_JWT_SECRET="$CONFIG_JWT_SECRET"
+CONFIG_DEPLOY_MODE="$CONFIG_DEPLOY_MODE"
+EOF
+}
+
+load_installer_config() {
+    if [ -f "$INSTALLER_ENV_FILE" ]; then
+        echo "📂 Found existing installer configuration, loading settings..."
+        source "$INSTALLER_ENV_FILE"
+        echo "✅ Configuration loaded successfully"
+        return 0
+    else
+        echo "🆕 No existing configuration found, starting fresh installation"
+        save_installer_config
+        return 1
+    fi
+}
 
 # Menu functions
 show_main_menu() {
@@ -108,6 +168,7 @@ show_ssl_menu() {
     echo "  City: $CONFIG_SSL_CITY"
     echo "  Organization: $CONFIG_SSL_ORG"
     echo "  Validity Days: $CONFIG_SSL_VALIDITY"
+    echo "  Generate Certificates: $CONFIG_SSL_GENERATE_CERTS"
     echo ""
     echo "Options:"
     echo "1. Edit Country"
@@ -115,9 +176,11 @@ show_ssl_menu() {
     echo "3. Edit City"
     echo "4. Edit Organization"
     echo "5. Edit Validity Days"
+    echo "6. Toggle Certificate Generation"
+    echo "7. Generate SSL Certificates Now"
     echo "9. Back to Main Menu"
     echo ""
-    echo -n "Choose an option [1-5,9]: "
+    echo -n "Choose an option [1-7,9]: "
 }
 
 show_grafana_menu() {
@@ -127,7 +190,7 @@ show_grafana_menu() {
     echo "========================================================================================"
     echo ""
     echo "Current Settings:"
-    echo "  Admin Password: $(echo "$CONFIG_GRAFANA_PASSWORD" | sed 's/./*/g')"
+    echo "  Admin Password: $CONFIG_GRAFANA_PASSWORD"
     echo ""
     echo "Options:"
     echo "1. Edit Admin Password"
@@ -144,7 +207,7 @@ show_postgres_menu() {
     echo ""
     echo "Current Settings:"
     echo "  Username: $CONFIG_POSTGRES_USER"
-    echo "  Password: $(echo "$CONFIG_POSTGRES_PASSWORD" | sed 's/./*/g')"
+    echo "  Password: $CONFIG_POSTGRES_PASSWORD"
     echo "  Database: $CONFIG_POSTGRES_DB"
     echo ""
     echo "Options:"
@@ -163,9 +226,9 @@ show_bitwarden_menu() {
     echo "========================================================================================"
     echo ""
     echo "Current Settings:"
-    echo "  Admin Token: $(echo "$CONFIG_BITWARDEN_ADMIN_TOKEN" | sed 's/./*/g')"
+    echo "  Admin Token: $CONFIG_BITWARDEN_ADMIN_TOKEN"
     echo "  Username: $CONFIG_BITWARDEN_USERNAME"
-    echo "  Password: $(echo "$CONFIG_BITWARDEN_PASSWORD" | sed 's/./*/g')"
+    echo "  Password: $CONFIG_BITWARDEN_PASSWORD"
     echo ""
     echo "Options:"
     echo "1. Edit Admin Token"
@@ -183,9 +246,9 @@ show_msteams_menu() {
     echo "========================================================================================"
     echo ""
     echo "Current Settings:"
-    echo "  General Webhook: $(echo "$CONFIG_MSTEAMS_WEBHOOK" | sed 's/./*/g')"
-    echo "  Critical Webhook: $(echo "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" | sed 's/./*/g')"
-    echo "  Warning Webhook: $(echo "$CONFIG_MSTEAMS_WARNING_WEBHOOK" | sed 's/./*/g')"
+    echo "  General Webhook: $CONFIG_MSTEAMS_WEBHOOK"
+    echo "  Critical Webhook: $CONFIG_MSTEAMS_CRITICAL_WEBHOOK"
+    echo "  Warning Webhook: $CONFIG_MSTEAMS_WARNING_WEBHOOK"
     echo ""
     echo "Options:"
     echo "1. Edit General Webhook"
@@ -203,7 +266,7 @@ show_security_menu() {
     echo "========================================================================================"
     echo ""
     echo "Current Settings:"
-    echo "  JWT Secret: $(echo "$CONFIG_JWT_SECRET" | sed 's/./*/g')"
+    echo "  JWT Secret: $CONFIG_JWT_SECRET"
     echo "  Deploy Mode: $CONFIG_DEPLOY_MODE"
     echo ""
     echo "Options:"
@@ -230,27 +293,28 @@ show_review_menu() {
     echo "  City: $CONFIG_SSL_CITY"
     echo "  Organization: $CONFIG_SSL_ORG"
     echo "  Validity: $CONFIG_SSL_VALIDITY days"
+    echo "  Generate Certificates: $CONFIG_SSL_GENERATE_CERTS"
     echo ""
     echo "📈 Grafana:"
-    echo "  Admin Password: $(echo "$CONFIG_GRAFANA_PASSWORD" | sed 's/./*/g')"
+    echo "  Admin Password: $CONFIG_GRAFANA_PASSWORD"
     echo ""
     echo "💾 PostgreSQL:"
     echo "  Username: $CONFIG_POSTGRES_USER"
-    echo "  Password: $(echo "$CONFIG_POSTGRES_PASSWORD" | sed 's/./*/g')"
+    echo "  Password: $CONFIG_POSTGRES_PASSWORD"
     echo "  Database: $CONFIG_POSTGRES_DB"
     echo ""
     echo "🔑 Bitwarden:"
-    echo "  Admin Token: $(echo "$CONFIG_BITWARDEN_ADMIN_TOKEN" | sed 's/./*/g')"
+    echo "  Admin Token: $CONFIG_BITWARDEN_ADMIN_TOKEN"
     echo "  Username: $CONFIG_BITWARDEN_USERNAME"
-    echo "  Password: $(echo "$CONFIG_BITWARDEN_PASSWORD" | sed 's/./*/g')"
+    echo "  Password: $CONFIG_BITWARDEN_PASSWORD"
     echo ""
     echo "🔔 MS Teams:"
-    echo "  General: $(echo "$CONFIG_MSTEAMS_WEBHOOK" | sed 's/./*/g')"
-    echo "  Critical: $(echo "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" | sed 's/./*/g')"
-    echo "  Warning: $(echo "$CONFIG_MSTEAMS_WARNING_WEBHOOK" | sed 's/./*/g')"
+    echo "  General: $CONFIG_MSTEAMS_WEBHOOK"
+    echo "  Critical: $CONFIG_MSTEAMS_CRITICAL_WEBHOOK"
+    echo "  Warning: $CONFIG_MSTEAMS_WARNING_WEBHOOK"
     echo ""
     echo "🔒 Security:"
-    echo "  JWT Secret: $(echo "$CONFIG_JWT_SECRET" | sed 's/./*/g')"
+    echo "  JWT Secret: $CONFIG_JWT_SECRET"
     echo "  Deploy Mode: $CONFIG_DEPLOY_MODE"
     echo ""
     echo "Options:"
@@ -357,11 +421,14 @@ handle_domain_menu() {
         case $choice in
             1)
                 CONFIG_DOMAIN_MAIN=$(read_input "Enter main domain" "$CONFIG_DOMAIN_MAIN" validate_domain) || continue
+                save_installer_config
                 ;;
             2)
                 CONFIG_DOMAIN_VAULT=$(read_input "Enter vault domain" "$CONFIG_DOMAIN_VAULT" validate_domain) || continue
+                save_installer_config
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -372,6 +439,51 @@ handle_domain_menu() {
     done
 }
 
+generate_ssl_certificates() {
+    echo "🔐 Generating SSL certificates..."
+    echo "   - Private key: RSA 4096-bit"
+    echo "   - Certificate: Self-signed for $CONFIG_DOMAIN_MAIN, $CONFIG_DOMAIN_VAULT"
+    echo "   - Validity: $CONFIG_SSL_VALIDITY days"
+
+    # Create SSL directory if it doesn't exist
+    mkdir -p "ssl-certificates"
+
+    # Generate SSL private key
+    if ! openssl genrsa -out "ssl-certificates/server.key" 4096 2>/dev/null; then
+        echo "❌ Failed to generate private key"
+        return 1
+    fi
+
+    # Generate Certificate Signing Request (CSR)
+    if ! openssl req -new -key "ssl-certificates/server.key" -out "ssl-certificates/server.csr" \
+      -subj "/C=$CONFIG_SSL_COUNTRY/ST=$CONFIG_SSL_STATE/L=$CONFIG_SSL_CITY/O=$CONFIG_SSL_ORG/CN=$CONFIG_DOMAIN_MAIN" 2>/dev/null; then
+        echo "❌ Failed to generate CSR"
+        return 1
+    fi
+
+    # Generate self-signed certificate with Subject Alternative Names
+    if ! openssl x509 -req -in "ssl-certificates/server.csr" \
+      -signkey "ssl-certificates/server.key" \
+      -out "ssl-certificates/server.crt" \
+      -days "$CONFIG_SSL_VALIDITY" \
+      -extfile <(printf "subjectAltName=DNS:$CONFIG_DOMAIN_MAIN,DNS:$CONFIG_DOMAIN_VAULT") 2>/dev/null; then
+        echo "❌ Failed to generate certificate"
+        return 1
+    fi
+
+    echo "✅ SSL certificates generated successfully in ssl-certificates/ directory"
+    echo "   - server.key (private key)"
+    echo "   - server.crt (certificate)"
+    echo "   - server.csr (certificate signing request)"
+
+    # Show certificate details
+    echo ""
+    echo "📜 Certificate Details:"
+    openssl x509 -in "ssl-certificates/server.crt" -text -noout | grep -E "(Subject:|Issuer:|Not Before:|Not After:|Subject Alternative Name:)" | head -10
+
+    read -p "Press Enter to continue..."
+}
+
 handle_ssl_menu() {
     while true; do
         show_ssl_menu
@@ -379,20 +491,39 @@ handle_ssl_menu() {
         case $choice in
             1)
                 CONFIG_SSL_COUNTRY=$(read_input "Enter country code (2 letters)" "$CONFIG_SSL_COUNTRY")
+                save_installer_config
                 ;;
             2)
                 CONFIG_SSL_STATE=$(read_input "Enter state/province" "$CONFIG_SSL_STATE")
+                save_installer_config
                 ;;
             3)
                 CONFIG_SSL_CITY=$(read_input "Enter city" "$CONFIG_SSL_CITY")
+                save_installer_config
                 ;;
             4)
                 CONFIG_SSL_ORG=$(read_input "Enter organization" "$CONFIG_SSL_ORG")
+                save_installer_config
                 ;;
             5)
                 CONFIG_SSL_VALIDITY=$(read_input "Enter validity in days" "$CONFIG_SSL_VALIDITY" validate_days) || continue
+                save_installer_config
+                ;;
+            6)
+                if [ "$CONFIG_SSL_GENERATE_CERTS" = "yes" ]; then
+                    CONFIG_SSL_GENERATE_CERTS="no"
+                else
+                    CONFIG_SSL_GENERATE_CERTS="yes"
+                fi
+                echo "🔄 Certificate generation set to: $CONFIG_SSL_GENERATE_CERTS"
+                save_installer_config
+                read -p "Press Enter to continue..."
+                ;;
+            7)
+                generate_ssl_certificates
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -410,8 +541,10 @@ handle_grafana_menu() {
         case $choice in
             1)
                 CONFIG_GRAFANA_PASSWORD=$(read_password "Enter Grafana admin password" "$CONFIG_GRAFANA_PASSWORD") || continue
+                save_installer_config
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -429,14 +562,18 @@ handle_postgres_menu() {
         case $choice in
             1)
                 CONFIG_POSTGRES_USER=$(read_input "Enter PostgreSQL username" "$CONFIG_POSTGRES_USER")
+                save_installer_config
                 ;;
             2)
                 CONFIG_POSTGRES_PASSWORD=$(read_password "Enter PostgreSQL password" "$CONFIG_POSTGRES_PASSWORD") || continue
+                save_installer_config
                 ;;
             3)
                 CONFIG_POSTGRES_DB=$(read_input "Enter PostgreSQL database name" "$CONFIG_POSTGRES_DB")
+                save_installer_config
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -454,14 +591,18 @@ handle_bitwarden_menu() {
         case $choice in
             1)
                 CONFIG_BITWARDEN_ADMIN_TOKEN=$(read_input "Enter Bitwarden admin token" "$CONFIG_BITWARDEN_ADMIN_TOKEN")
+                save_installer_config
                 ;;
             2)
                 CONFIG_BITWARDEN_USERNAME=$(read_input "Enter Bitwarden username" "$CONFIG_BITWARDEN_USERNAME")
+                save_installer_config
                 ;;
             3)
                 CONFIG_BITWARDEN_PASSWORD=$(read_password "Enter Bitwarden password" "$CONFIG_BITWARDEN_PASSWORD") || continue
+                save_installer_config
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -479,14 +620,18 @@ handle_msteams_menu() {
         case $choice in
             1)
                 CONFIG_MSTEAMS_WEBHOOK=$(read_input "Enter MS Teams general webhook URL" "$CONFIG_MSTEAMS_WEBHOOK" validate_url) || continue
+                save_installer_config
                 ;;
             2)
                 CONFIG_MSTEAMS_CRITICAL_WEBHOOK=$(read_input "Enter MS Teams critical webhook URL" "$CONFIG_MSTEAMS_CRITICAL_WEBHOOK" validate_url) || continue
+                save_installer_config
                 ;;
             3)
                 CONFIG_MSTEAMS_WARNING_WEBHOOK=$(read_input "Enter MS Teams warning webhook URL" "$CONFIG_MSTEAMS_WARNING_WEBHOOK" validate_url) || continue
+                save_installer_config
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -508,6 +653,7 @@ handle_security_menu() {
                     CONFIG_JWT_SECRET=$(generate_secret)
                     echo "🔑 Generated JWT secret: $(echo "$CONFIG_JWT_SECRET" | cut -c1-20)..."
                 fi
+                save_installer_config
                 ;;
             2)
                 if [ "$CONFIG_DEPLOY_MODE" = "ssl" ]; then
@@ -516,9 +662,11 @@ handle_security_menu() {
                     CONFIG_DEPLOY_MODE="ssl"
                 fi
                 echo "🔄 Deploy mode changed to: $CONFIG_DEPLOY_MODE"
+                save_installer_config
                 read -p "Press Enter to continue..."
                 ;;
             9)
+                save_installer_config
                 return
                 ;;
             *)
@@ -568,17 +716,46 @@ perform_installation() {
     echo "🚀 Starting Installation..."
     echo ""
 
-    # Generate SSL certificates
-    echo "🔐 Generating SSL certificates..."
-    openssl genrsa -out configs/nginx/ssl/server.key 4096 2>/dev/null
-    openssl req -new -key configs/nginx/ssl/server.key -out configs/nginx/ssl/server.csr \
-      -subj "/C=$CONFIG_SSL_COUNTRY/ST=$CONFIG_SSL_STATE/L=$CONFIG_SSL_CITY/O=$CONFIG_SSL_ORG/CN=$CONFIG_DOMAIN_MAIN" 2>/dev/null
-    openssl x509 -req -in configs/nginx/ssl/server.csr \
-      -signkey configs/nginx/ssl/server.key \
-      -out configs/nginx/ssl/server.crt \
-      -days $CONFIG_SSL_VALIDITY \
-      -extfile <(printf "subjectAltName=DNS:$CONFIG_DOMAIN_MAIN,DNS:$CONFIG_DOMAIN_VAULT") 2>/dev/null
-    echo "✅ SSL certificates generated"
+    # Handle SSL certificates
+    if [ "$CONFIG_SSL_GENERATE_CERTS" = "yes" ]; then
+        echo "🔐 SSL Certificate Configuration..."
+        if [ -f "ssl-certificates/server.crt" ] && [ -f "ssl-certificates/server.key" ]; then
+            echo "✅ Using existing SSL certificates from ssl-certificates/ directory"
+            cp ssl-certificates/server.crt configs/nginx/ssl/
+            cp ssl-certificates/server.key configs/nginx/ssl/
+            cp ssl-certificates/server.csr configs/nginx/ssl/ 2>/dev/null || true
+        else
+            echo "🔐 Generating new SSL certificates..."
+            echo "   - Private key: RSA 4096-bit"
+            echo "   - Certificate: Self-signed for $CONFIG_DOMAIN_MAIN, $CONFIG_DOMAIN_VAULT"
+            echo "   - Validity: $CONFIG_SSL_VALIDITY days"
+
+            # Generate SSL private key
+            openssl genrsa -out configs/nginx/ssl/server.key 4096 2>/dev/null
+
+            # Generate Certificate Signing Request (CSR)
+            openssl req -new -key configs/nginx/ssl/server.key -out configs/nginx/ssl/server.csr \
+              -subj "/C=$CONFIG_SSL_COUNTRY/ST=$CONFIG_SSL_STATE/L=$CONFIG_SSL_CITY/O=$CONFIG_SSL_ORG/CN=$CONFIG_DOMAIN_MAIN" 2>/dev/null
+
+            # Generate self-signed certificate with Subject Alternative Names
+            openssl x509 -req -in configs/nginx/ssl/server.csr \
+              -signkey configs/nginx/ssl/server.key \
+              -out configs/nginx/ssl/server.crt \
+              -days $CONFIG_SSL_VALIDITY \
+              -extfile <(printf "subjectAltName=DNS:$CONFIG_DOMAIN_MAIN,DNS:$CONFIG_DOMAIN_VAULT") 2>/dev/null
+
+            echo "✅ SSL certificates generated"
+
+            # Also save to ssl-certificates directory for future reference
+            mkdir -p ssl-certificates
+            cp configs/nginx/ssl/server.crt ssl-certificates/
+            cp configs/nginx/ssl/server.key ssl-certificates/
+            cp configs/nginx/ssl/server.csr ssl-certificates/ 2>/dev/null || true
+        fi
+    else
+        echo "⚠️  SSL certificate generation disabled. Using basic HTTP configuration."
+        echo "   Enable SSL in the menu if you want HTTPS support."
+    fi
 
     # Generate .env file
     echo "📝 Generating environment configuration..."
@@ -1087,6 +1264,16 @@ EOF
     chmod 644 docker-compose.ssl.yml
 
     echo ""
+    echo "📜 Installation Files:"
+    echo "   Configuration: $INSTALLER_ENV_FILE (saved for future updates)"
+    if [ "$CONFIG_SSL_GENERATE_CERTS" = "yes" ]; then
+        echo "   SSL Certificates: configs/nginx/ssl/"
+        echo "   ├── server.key (private key - restricted permissions)"
+        echo "   ├── server.crt (certificate)"
+        echo "   └── server.csr (certificate signing request)"
+        echo "   Backup Location: ssl-certificates/"
+    fi
+    echo ""
     echo "🎉 Installation complete!"
     echo ""
     echo "🚀 Starting services..."
@@ -1120,6 +1307,9 @@ EOF
 
 # Main menu loop
 main_menu_loop() {
+    # Load existing configuration if available
+    load_installer_config
+
     while true; do
         show_main_menu
         read choice
