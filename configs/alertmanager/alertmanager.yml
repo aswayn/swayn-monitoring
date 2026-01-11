@@ -7,16 +7,43 @@ route:
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 1h
-  receiver: 'email-notifications'
+  receiver: 'msteams-notifications'
   routes:
   - match:
       alertname: Watchdog
     receiver: 'devnull'
+  - match:
+      severity: 'critical'
+    receiver: 'msteams-critical'
+  - match:
+      severity: 'warning'
+    receiver: 'msteams-warning'
 
 receivers:
 - name: 'email-notifications'
   email_configs:
   - to: 'admin@swayn-monitoring.local'
     send_resolved: true
+
+- name: 'msteams-notifications'
+  webhook_configs:
+  - url: 'MSTEAMS_WEBHOOK_URL_PLACEHOLDER'
+    send_resolved: true
+    http_config:
+      content_type: 'application/json'
+
+- name: 'msteams-critical'
+  webhook_configs:
+  - url: 'MSTEAMS_CRITICAL_WEBHOOK_URL_PLACEHOLDER'
+    send_resolved: true
+    http_config:
+      content_type: 'application/json'
+
+- name: 'msteams-warning'
+  webhook_configs:
+  - url: 'MSTEAMS_WARNING_WEBHOOK_URL_PLACEHOLDER'
+    send_resolved: true
+    http_config:
+      content_type: 'application/json'
 
 - name: 'devnull'

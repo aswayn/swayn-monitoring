@@ -9,7 +9,7 @@ rule_files:
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['prometheus:9090']
 
   - job_name: 'grafana'
     static_configs:
@@ -19,6 +19,41 @@ scrape_configs:
     static_configs:
       - targets: ['alertmanager:9093']
 
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: 'bitwarden'
+    static_configs:
+      - targets: ['bitwarden:80']
+
+  - job_name: 'keypair-service'
+    static_configs:
+      - targets: ['keypair-service:3001']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  - job_name: 'etcd'
+    static_configs:
+      - targets: ['etcd:2379']
+
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
+
+  # Dynamic targets from etcd (managed by Bitwarden scanner)
+  - job_name: 'bitwarden-targets'
+    etcd_sd_configs:
+      - server: 'etcd:2379'
+        prefix: '/prometheus/targets/'
+    relabel_configs:
+      - source_labels: ['__meta_etcd_key']
+        regex: '/prometheus/targets/(.+)/(.+)'
+        replacement: '${1}'
+        target_label: 'job'
+      - source_labels: ['__meta_etcd_value']
+        regex: '(.+)'
+        replacement: '${1}'
+        target_label: '__address__'
