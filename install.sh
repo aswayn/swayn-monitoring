@@ -15,9 +15,12 @@ mkdir -p configs/alertmanager
 mkdir -p configs/grafana/provisioning/datasources
 mkdir -p configs/grafana/provisioning/dashboards
 mkdir -p configs/grafana/dashboards
+mkdir -p configs/loki
 mkdir -p configs/nginx/ssl
+mkdir -p keypair-service
 mkdir -p scanner
 mkdir -p data/grafana
+mkdir -p data/loki
 mkdir -p data/prometheus
 
 echo "📝 Creating configuration files..."
@@ -290,7 +293,15 @@ BITWARDEN_ADMIN_TOKEN=your_secure_admin_token_here
 BITWARDEN_USERNAME=your_bitwarden_username
 BITWARDEN_PASSWORD=your_bitwarden_password
 
-# Optional: SSL Configuration
+# Microsoft Teams Webhook URLs for Alertmanager
+MSTEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/your-webhook-url
+MSTEAMS_CRITICAL_WEBHOOK_URL=https://outlook.office.com/webhook/your-critical-webhook-url
+MSTEAMS_WARNING_WEBHOOK_URL=https://outlook.office.com/webhook/your-warning-webhook-url
+
+# Keypair Service Configuration
+JWT_SECRET=your-secure-jwt-secret-change-this-in-production
+
+# SSL certificates are automatically configured via docker-compose.ssl.yml
 # SSL_CERT_PATH=/path/to/cert.pem
 # SSL_KEY_PATH=/path/to/key.pem
 
@@ -321,6 +332,7 @@ EOF
 echo "🔒 Setting permissions..."
 chmod 644 configs/prometheus/prometheus.yml
 chmod 644 configs/alertmanager/alertmanager.yml
+chmod 755 configs/alertmanager/entrypoint.sh
 chmod 644 configs/grafana/provisioning/datasources/prometheus.yml
 chmod 644 configs/grafana/provisioning/dashboards/dashboard.yml
 chmod 644 configs/grafana/dashboards/system-overview.json

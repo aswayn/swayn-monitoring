@@ -10,6 +10,9 @@ RUN curl -L "https://vault.bitwarden.com/download/?app=cli&platform=linux" -o bw
     mv bw /usr/local/bin/ && \
     rm bw-linux.zip
 
+# Install etcdctl for debugging (optional)
+RUN apk add --no-cache etcd-ctl
+
 # Set working directory
 WORKDIR /app
 

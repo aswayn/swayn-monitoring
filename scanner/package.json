@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@bitwarden/cli": "^2023.9.0",
+    "etcd3": "^1.1.0",
     "fs": "^0.0.1",
     "path": "^0.12.7"
   },

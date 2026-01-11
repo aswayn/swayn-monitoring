@@ -32,15 +32,20 @@ A comprehensive monitoring stack using Docker Compose with Grafana, Prometheus, 
 - **Grafana**: https://localhost/grafana/ (admin/admin by default)
 - **Prometheus**: https://localhost/prometheus/
 - **Alert Manager**: https://localhost/alertmanager/
+- **Loki**: http://localhost:3100/ (log aggregation)
 - **Bitwarden**: https://vault.corp.swayn.com/ (password manager)
+- **Keypair Service API**: http://localhost:3002/api/ (keypair management - internal only)
 - **Health Check**: https://localhost/health
 
 ### Service Details
-- **Grafana** (Port 3000): Visualization and dashboard platform
-- **Prometheus** (Port 9090): Metrics collection and storage
+- **Grafana** (Port 3000): Visualization and dashboard platform with Loki logs integration
+- **Prometheus** (Port 9090): Metrics collection and storage with etcd service discovery
+- **Loki** (Ports 3100, 1514): Log aggregation with syslog TCP/UDP support
 - **Alert Manager** (Port 9093): Alert handling and notifications
 - **Bitwarden** (Port 80): Self-hosted password manager (Vaultwarden)
-- **Node.js Scanner**: Automated service that syncs Bitwarden entries to Prometheus targets
+- **Keypair Service** (Port 3001): REST API for managing cryptographic keypairs
+- **etcd** (Ports 2379/2380): Distributed key-value store for configuration management
+- **Node.js Scanner**: Automated service that syncs Bitwarden entries to etcd for Prometheus
 - **Nginx** (Ports 80/443): Reverse proxy with SSL termination
 
 ## 🔐 SSL Configuration
@@ -72,27 +77,60 @@ All services are configured for Australia/Sydney timezone:
 
 ## 🤖 Node.js Bitwarden Scanner
 
-The monitoring stack includes an automated Node.js service that scans Bitwarden entries and dynamically updates Prometheus targets.
+The monitoring stack includes an automated Node.js service that scans Bitwarden entries and dynamically updates Prometheus targets via etcd service discovery.
 
 ### Features
 - **Automatic Discovery**: Scans Bitwarden entries every minute for URIs
+- **etcd Integration**: Writes target configurations to etcd key-value store
 - **Dynamic Configuration**: Automatically adds/removes Prometheus targets based on Bitwarden changes
-- **URI Parsing**: Extracts hostnames and ports from Bitwarden entry URIs
-- **Live Updates**: Triggers Prometheus configuration reload when changes are detected
 - **Change Detection**: Only updates when Bitwarden entries actually change
+- **URI Parsing**: Extracts hostnames and ports from Bitwarden entry URIs
+- **Real-time Updates**: Prometheus automatically discovers new targets via service discovery
 
 ### How It Works
 1. **Authentication**: Logs into Bitwarden using provided credentials
 2. **Scanning**: Retrieves all entries with URIs every 60 seconds
 3. **Processing**: Extracts service names and endpoints from entries
-4. **Configuration**: Updates Prometheus scrape targets with new/changed entries
-5. **Reload**: Triggers Prometheus configuration reload to apply changes
+4. **etcd Storage**: Writes target configurations to etcd with structured keys
+5. **Service Discovery**: Prometheus automatically discovers targets from etcd
 
 ### Configuration
 Set the following environment variables in your `.env` file:
 ```bash
 BITWARDEN_USERNAME=your_bitwarden_username
 BITWARDEN_PASSWORD=your_bitwarden_password
+```
+
+### etcd Integration
+The scanner writes to etcd using this structure:
+```
+/prometheus/targets/{job_name}/{target_url} = {"target": "host:port", "labels": {...}}
+```
+
+### Bitwarden Entry Format
+The scanner looks for entries with:
+- **Name**: Used as the Prometheus job name (sanitized for Prometheus format)
+- **URI**: HTTP/HTTPS URLs that become Prometheus targets
+- **Multiple URIs**: Each URI in an entry becomes a separate target
+
+### Example
+A Bitwarden entry named "My Web Service" with URI "http://web-service:8080" creates:
+```
+etcd key: /prometheus/targets/my_web_service/web-service:8080
+Value: {"target": "web-service:8080", "labels": {"bitwarden_item": "My Web Service", "source": "bitwarden"}}
+```
+
+Prometheus discovers this as:
+```yaml
+- job_name: 'bitwarden-targets'
+  etcd_sd_configs:
+    - server: 'etcd:2379'
+      prefix: '/prometheus/targets/'
+  relabel_configs:
+    - source_labels: ['__meta_etcd_key']
+      regex: '/prometheus/targets/(.+)/(.+)'
+      replacement: '${1}'
+      target_label: 'job'
 ```
 
 ### Bitwarden Entry Format
@@ -159,6 +197,285 @@ openssl rand -base64 32
 - Regularly backup the `bitwarden_data` volume
 - Consider enabling additional security features
 
+## 🔔 MS Teams Alert Notifications
+
+The Alertmanager is configured to send notifications to Microsoft Teams channels for different alert severities.
+
+### Notification Channels
+- **General Alerts**: All alerts sent to the main Teams channel
+- **Critical Alerts**: 🚨 High-priority alerts with special formatting
+- **Warning Alerts**: ⚠️ Warning-level alerts
+
+### Setup MS Teams Webhooks
+1. Go to your Microsoft Teams channel
+2. Click the "..." menu → "Workflows" → "Post to a channel when a webhook request is received"
+3. Create incoming webhooks for each notification type:
+   - General notifications webhook
+   - Critical alerts webhook (optional)
+   - Warning alerts webhook (optional)
+
+4. Copy the webhook URLs and add them to your `.env` file:
+```bash
+MSTEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/your-webhook-url
+MSTEAMS_CRITICAL_WEBHOOK_URL=https://outlook.office.com/webhook/your-critical-webhook-url
+MSTEAMS_WARNING_WEBHOOK_URL=https://outlook.office.com/webhook/your-warning-webhook-url
+```
+
+### Alert Routing
+- **Default**: All alerts go to the general MS Teams channel
+- **Critical**: Alerts with `severity: critical` go to the critical channel
+- **Warning**: Alerts with `severity: warning` go to the warning channel
+
+### Message Format
+MS Teams notifications include:
+- Alert name and status
+- Severity level with emoji indicators
+- Instance and job information
+- Timestamp
+- Alert descriptions and summaries
+
+### Example Prometheus Alert
+```yaml
+groups:
+- name: example
+  rules:
+  - alert: HighCPUUsage
+    expr: cpu_usage > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High CPU usage detected"
+      description: "CPU usage is above 90% for more than 5 minutes"
+```
+
+## 🗂️ etcd Service Discovery
+
+The monitoring stack uses etcd as a dynamic configuration store for Prometheus service discovery.
+
+### How It Works
+1. **Node.js Scanner** reads Bitwarden entries and extracts service endpoints
+2. **Target configurations** are written to etcd key-value store
+3. **Prometheus** uses etcd service discovery to automatically find new targets
+4. **Real-time updates** without manual configuration file changes
+
+### etcd Structure
+```
+etcd keys: /prometheus/targets/{job_name}/{target_url}
+Values: JSON with target information and labels
+```
+
+### Benefits
+- **Dynamic scaling**: Automatically add/remove monitoring targets
+- **Centralized configuration**: Single source of truth for service discovery
+- **High availability**: etcd provides distributed, fault-tolerant storage
+- **Real-time updates**: No service restarts required for configuration changes
+
+### etcd Access
+- **Client Port**: 2379 (HTTP API)
+- **Peer Port**: 2380 (cluster communication)
+- **Web UI**: Not included (use etcdctl for management)
+
+### Configuration
+etcd is configured with:
+- **Auto-compaction**: 1-hour retention for configuration history
+- **Single-node cluster**: Suitable for development/testing
+- **Persistent storage**: Data survives container restarts
+
+## 📝 Loki Log Aggregation
+
+The monitoring stack includes Loki for centralized log aggregation with syslog streaming support.
+
+### Features
+- **Syslog Support**: Receives logs via TCP and UDP on port 1514
+- **Grafana Integration**: Native integration with Grafana for log visualization
+- **Prometheus Compatible**: Works with Promtail for advanced log processing
+- **Multi-tenant**: Supports multiple log streams and labeling
+- **Efficient Storage**: Optimized for log data with compression
+
+### Syslog Configuration
+Loki listens for syslog messages on:
+- **TCP**: Port 1514 (reliable delivery)
+- **UDP**: Port 1514 (high-throughput)
+
+### Log Ingestion Examples
+
+**Send logs via TCP:**
+```bash
+echo "<14>$(date '+%b %d %H:%M:%S') myhost myapp[123]: Test log message" | nc localhost 1514
+```
+
+**Send logs via UDP:**
+```bash
+echo "<14>$(date '+%b %d %H:%M:%S') myhost myapp[123]: UDP log message" | nc -u localhost 1514
+```
+
+**From systemd services:**
+```bash
+# Add to systemd service configuration
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=my-service
+```
+
+**From Docker containers:**
+```bash
+docker run --log-driver syslog --log-opt syslog-address=tcp://localhost:1514 your-app
+```
+
+### Grafana Integration
+Loki is automatically configured as a datasource in Grafana:
+- **URL**: http://loki:3100
+- **Type**: Loki
+- **Access**: Proxy
+
+### Query Examples
+```
+# Basic log search
+{job="syslog"}
+
+# Filter by hostname
+{hostname="web-server"}
+
+# Search for errors
+{job="syslog"} |= "error"
+
+# Time-based queries
+{job="syslog"} [5m]
+```
+
+### Configuration
+Loki is configured with:
+- **Retention**: Configurable log retention policies
+- **Indexing**: Efficient indexing for fast queries
+- **Compression**: Automatic log compression
+- **Multi-format**: Supports JSON, logfmt, and plain text
+
+## 🔑 Keypair Management Service
+
+The monitoring stack includes a secure keypair management service for storing and managing cryptographic keys, SSH keys, API keys, and certificates.
+
+### Features
+- **Keypair Storage**: Secure storage of public/private keypairs in PostgreSQL
+- **SSH Key Generation**: Automated generation of SSH keypairs with optional passphrase protection
+- **REST API**: Full CRUD operations for keypair management
+- **Authentication**: JWT-based authentication with role-based access
+- **Encryption**: Private keys can be encrypted with passphrases
+- **Metadata Support**: Flexible JSON metadata for additional key information
+
+### API Endpoints
+
+#### Authentication
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+#### Keypair Operations
+```http
+# Generate SSH keypair
+POST /api/keys/generate-ssh
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "my-ssh-key",
+  "passphrase": "optional-passphrase",
+  "keySize": 2048
+}
+
+# List all keypairs
+GET /api/keys
+Authorization: Bearer <jwt-token>
+
+# Get specific keypair
+GET /api/keys/{id}
+Authorization: Bearer <jwt-token>
+
+# Get private key (with passphrase if encrypted)
+POST /api/keys/{id}/private
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "passphrase": "key-passphrase"
+}
+
+# Update keypair metadata
+PUT /api/keys/{id}
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "metadata": {
+    "environment": "production",
+    "purpose": "database-access"
+  }
+}
+
+# Delete keypair
+DELETE /api/keys/{id}
+Authorization: Bearer <jwt-token>
+```
+
+### Default Credentials
+- **Username**: admin
+- **Password**: admin123
+- **Role**: admin
+
+### Security Features
+- **JWT Authentication**: Bearer token-based authentication
+- **Password Hashing**: Bcrypt password hashing for service accounts
+- **Key Encryption**: AES-256-CBC encryption for private keys with passphrases
+- **Role-based Access**: Support for different user roles and permissions
+- **HTTPS Ready**: Designed to work behind reverse proxies with SSL
+
+### Environment Variables
+Add to your `.env` file:
+```bash
+JWT_SECRET=your-secure-jwt-secret-change-this-in-production
+```
+
+### Usage Examples
+
+**Generate and Store SSH Key:**
+```bash
+curl -X POST http://localhost:3002/api/keys/generate-ssh \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "web-server-ssh",
+    "passphrase": "my-secure-passphrase",
+    "keySize": 4096
+  }'
+```
+
+**Retrieve Public Key:**
+```bash
+curl -X GET http://localhost:3002/api/keys/1 \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+**Get Encrypted Private Key:**
+```bash
+curl -X POST http://localhost:3002/api/keys/1/private \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"passphrase": "my-secure-passphrase"}'
+```
+
+### Integration
+The keypair service integrates seamlessly with:
+- **Bitwarden**: For password management alongside keypairs
+- **PostgreSQL**: For secure, persistent storage
+- **Monitoring Stack**: Can be monitored by Prometheus
+- **CI/CD Pipelines**: API can be used by automation tools
+
 ## 📁 Directory Structure
 
 ```
@@ -168,14 +485,18 @@ swayn-monitoring/
 │   ├── grafana/
 │   │   ├── dashboards/
 │   │   └── provisioning/
+│   ├── loki/               # Loki configuration
 │   ├── nginx/
 │   │   └── ssl/            # SSL certificates
-│   └── prometheus/
+│   ├── postgres/
+│   ├── prometheus/
+│   └── web/                # PHP configuration
 ├── data/                    # Persistent data (created by Docker)
 ├── docker-compose.yml       # Main compose file
 ├── docker-compose.ssl.yml   # SSL override file
 ├── install.sh              # Setup script
 ├── .env.example            # Environment template
+├── keypair-service/        # Keypair management service
 ├── README.md               # Main documentation
 └── scanner/                # Node.js Bitwarden scanner
 ```

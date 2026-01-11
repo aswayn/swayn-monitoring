@@ -1,13 +1,15 @@
 const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { Etcd3 } = require('etcd3');
 
 class BitwardenPrometheusScanner {
     constructor() {
         this.bitwardenUrl = process.env.BITWARDEN_URL || 'https://vault.corp.swayn.com';
         this.username = process.env.BITWARDEN_USERNAME;
         this.password = process.env.BITWARDEN_PASSWORD;
-        this.prometheusConfigPath = process.env.PROMETHEUS_CONFIG_PATH || '/etc/prometheus/prometheus.yml';
+        this.etcdEndpoints = process.env.ETCD_ENDPOINTS || 'etcd:2379';
+        this.etcdPrefix = process.env.ETCD_PREFIX || '/prometheus/targets/';
         this.scanInterval = 60 * 1000; // 1 minute
         this.lastScanHash = null;
 
@@ -15,6 +17,12 @@ class BitwardenPrometheusScanner {
             console.error('BITWARDEN_USERNAME and BITWARDEN_PASSWORD environment variables are required');
             process.exit(1);
         }
+
+        // Initialize etcd client
+        this.etcd = new Etcd3({
+            hosts: this.etcdEndpoints.split(','),
+            dialTimeout: 3000,
+        });
     }
 
     async run() {
@@ -52,11 +60,10 @@ class BitwardenPrometheusScanner {
             // Generate Prometheus targets from Bitwarden entries
             const targets = this.generatePrometheusTargets(items);
 
-            // Update Prometheus configuration
+            // Update Prometheus configuration in etcd
             await this.updatePrometheusConfig(targets);
 
-            // Reload Prometheus
-            await this.reloadPrometheus();
+            // Note: No manual reload needed with service discovery
 
             this.lastScanHash = currentHash;
             console.log('✅ Prometheus configuration updated successfully');
@@ -154,118 +161,59 @@ class BitwardenPrometheusScanner {
             .substring(0, 50); // Limit length
     }
 
+    async clearEtcdTargets() {
+        try {
+            // Delete all keys under the targets prefix
+            await this.etcd.delete().prefix(this.etcdPrefix).exec();
+            console.log('🧹 Cleared existing etcd targets');
+        } catch (error) {
+            console.warn('Warning: Failed to clear existing etcd targets:', error.message);
+        }
+    }
+
+    async writeTargetsToEtcd(targets) {
+        const operations = [];
+
+        targets.forEach(target => {
+            // Create etcd key in format: /prometheus/targets/{job_name}/{target_url}
+            const key = `${this.etcdPrefix}${target.job_name}/${target.target_url}`;
+
+            // Store target information as JSON
+            const value = JSON.stringify({
+                target: target.target_url,
+                labels: target.labels || {}
+            });
+
+            operations.push({
+                type: 'put',
+                key: key,
+                value: value
+            });
+        });
+
+        if (operations.length > 0) {
+            // Execute all put operations in a transaction
+            await this.etcd.transaction()
+                .If()
+                .Then(...operations.map(op => this.etcd.put(op.key).value(op.value)))
+                .Commit();
+
+            console.log(`✅ Wrote ${operations.length} target entries to etcd`);
+        }
+    }
+
     async updatePrometheusConfig(targets) {
         try {
-            // Read current config
-            let config = fs.readFileSync(this.prometheusConfigPath, 'utf8');
+            // Clear existing targets in etcd
+            await this.clearEtcdTargets();
 
-            // Remove existing bitwarden-generated targets
-            config = this.removeBitwardenTargets(config);
+            // Write new targets to etcd
+            await this.writeTargetsToEtcd(targets);
 
-            // Add new targets
-            config = this.addBitwardenTargets(config, targets);
-
-            // Write updated config
-            fs.writeFileSync(this.prometheusConfigPath, config, 'utf8');
-            console.log(`📝 Updated Prometheus config with ${targets.length} Bitwarden targets`);
+            console.log(`📝 Updated etcd with ${targets.length} Bitwarden targets`);
 
         } catch (error) {
-            throw new Error(`Failed to update Prometheus config: ${error.message}`);
-        }
-    }
-
-    removeBitwardenTargets(config) {
-        const lines = config.split('\n');
-        const filteredLines = [];
-        let skipBlock = false;
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-
-            // Check for bitwarden-generated job blocks
-            if (line.includes('job_name:') && line.includes('bitwarden_')) {
-                skipBlock = true;
-                // Skip until next job_name or end of scrape_configs
-                while (i < lines.length && !lines[i].match(/^  - job_name:/) && !lines[i].includes('scrape_configs:')) {
-                    i++;
-                }
-                i--; // Adjust for loop increment
-                skipBlock = false;
-                continue;
-            }
-
-            if (!skipBlock) {
-                filteredLines.push(line);
-            }
-        }
-
-        return filteredLines.join('\n');
-    }
-
-    addBitwardenTargets(config, targets) {
-        if (targets.length === 0) {
-            return config;
-        }
-
-        // Find scrape_configs section
-        const lines = config.split('\n');
-        let insertIndex = -1;
-
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes('scrape_configs:')) {
-                // Find where to insert (after existing jobs)
-                let j = i + 1;
-                while (j < lines.length && (lines[j].startsWith(' ') || lines[j].trim() === '')) {
-                    if (lines[j].match(/^  - job_name:/)) {
-                        // Find the end of this job block
-                        while (j < lines.length && (lines[j].startsWith(' ') || lines[j].trim() === '')) {
-                            j++;
-                        }
-                    } else {
-                        j++;
-                    }
-                }
-                insertIndex = j;
-                break;
-            }
-        }
-
-        if (insertIndex === -1) {
-            throw new Error('Could not find scrape_configs section in Prometheus config');
-        }
-
-        // Generate YAML for new targets
-        const targetYaml = targets.map(target => {
-            let yaml = `  - job_name: bitwarden_${target.job_name}\n`;
-            yaml += `    static_configs:\n`;
-            yaml += `      - targets: ['${target.target_url}']\n`;
-
-            if (target.labels && Object.keys(target.labels).length > 0) {
-                yaml += `    labels:\n`;
-                Object.entries(target.labels).forEach(([key, value]) => {
-                    yaml += `      ${key}: "${value}"\n`;
-                });
-            }
-
-            return yaml;
-        }).join('\n');
-
-        // Insert into config
-        lines.splice(insertIndex, 0, targetYaml);
-
-        return lines.join('\n');
-    }
-
-    async reloadPrometheus() {
-        try {
-            console.log('🔄 Reloading Prometheus configuration...');
-
-            // Use curl to trigger Prometheus reload
-            execSync(`curl -X POST http://prometheus:9090/-/reload`, { stdio: 'pipe' });
-
-            console.log('✅ Prometheus reloaded successfully');
-        } catch (error) {
-            throw new Error(`Failed to reload Prometheus: ${error.message}`);
+            throw new Error(`Failed to update etcd targets: ${error.message}`);
         }
     }
 }

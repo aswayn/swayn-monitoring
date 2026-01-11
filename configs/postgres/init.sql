@@ -58,8 +58,41 @@ INSERT INTO monitoring.prometheus_targets (job_name, target_url, description) VA
 ('prometheus', 'localhost:9090', 'Prometheus itself'),
 ('grafana', 'grafana:3000', 'Grafana web interface'),
 ('alertmanager', 'alertmanager:9093', 'Alert Manager service'),
-('postgres', 'postgres:5432', 'PostgreSQL database')
+('postgres', 'postgres:5432', 'PostgreSQL database'),
+('keypair-service', 'keypair-service:3001', 'Keypair management service')
 ON CONFLICT (job_name) DO NOTHING;
+
+-- Create tables for keypair service
+CREATE TABLE IF NOT EXISTS monitoring.keypairs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    type VARCHAR(50) NOT NULL, -- ssh, api, certificate, etc.
+    public_key TEXT,
+    private_key TEXT,
+    encrypted_private_key TEXT,
+    passphrase_hash VARCHAR(255),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS monitoring.service_accounts (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for keypairs
+CREATE INDEX IF NOT EXISTS idx_keypairs_type ON monitoring.keypairs (type);
+CREATE INDEX IF NOT EXISTS idx_keypairs_name ON monitoring.keypairs (name);
+
+-- Insert default admin user (password: admin123)
+-- Hash generated with bcrypt, 12 salt rounds
+INSERT INTO monitoring.service_accounts (username, password_hash, role) VALUES
+('admin', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj7HQTWKaL6e', 'admin')
+ON CONFLICT (username) DO NOTHING;
 
 -- Grant permissions to the monitoring user
 GRANT ALL PRIVILEGES ON SCHEMA monitoring TO monitoring_user;
