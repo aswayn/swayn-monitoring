@@ -383,43 +383,57 @@ read_input() {
     local prompt=$1
     local default=$2
     local validator=$3
+    local input
 
+    # Display prompt and ensure it's flushed immediately
     if [ -n "$default" ]; then
-        echo -n "$prompt [$default]: "
+        printf "%s [%s]: " "$prompt" "$default"
     else
-        echo -n "$prompt: "
+        printf "%s: " "$prompt"
     fi
 
-    read input
+    # Read input from stdin
+    IFS= read -r input || return 1
+
+    # Use default if input is empty
     input=${input:-$default}
 
+    # Validate input if validator provided
     if [ -n "$validator" ]; then
         if ! $validator "$input"; then
             return 1
         fi
     fi
 
-    echo "$input"
+    # Return the input
+    printf "%s" "$input"
 }
 
 read_password() {
     local prompt=$1
     local default=$2
+    local input
 
-    echo -n "$prompt: "
-    read -s input
-    echo ""
+    # Display prompt and ensure it's flushed immediately
+    printf "%s: " "$prompt"
 
+    # Read password silently from stdin
+    IFS= read -r -s input || return 1
+    echo ""  # New line after password input
+
+    # Use default if input is empty
     if [ -z "$input" ] && [ -n "$default" ]; then
         input=$default
     fi
 
+    # Validate that password is not empty
     if [ -z "$input" ]; then
         echo "❌ Password cannot be empty"
         return 1
     fi
 
-    echo "$input"
+    # Return the password
+    printf "%s" "$input"
 }
 
 # Generate random secrets
